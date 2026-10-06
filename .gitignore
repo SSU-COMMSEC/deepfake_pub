@@ -1,0 +1,12 @@
+# Data, weights and run artifacts are not tracked
+dataset/
+checkpoints/
+results/
+repos/
+logs/
+demo_out/
+
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/

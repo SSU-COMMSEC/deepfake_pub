@@ -1,0 +1,57 @@
+THIRD-PARTY NOTICES
+===================
+
+This repository reproduces and evaluates methods from the following papers. Copyright for the
+papers and for the original implementations belongs to their respective authors.
+
+
+C-DUP
+-----
+Li, Neupane, Paul, Song, Krishnamurthy, Roy Chowdhury, Swami.
+"Stealthy Adversarial Perturbations Against Real-Time Video Classification Systems."
+Network and Distributed System Security Symposium (NDSS), 2019.
+
+Original implementation: https://github.com/sli057/Video-Perturbation  (TensorFlow 1.x)
+
+`adapters/cdup_adapter.py` is a layer-by-layer PyTorch transcription of the authors'
+generator (`generator_3D`) and training objective. No original source is included here.
+
+
+U3D
+---
+Xie, Wang, Kong, Hong.
+"Universal 3-Dimensional Perturbations for Black-Box Attacks on Video Recognition Systems."
+IEEE Symposium on Security and Privacy (S&P), 2022, pp. 1390-1407.
+
+Reference implementation: https://github.com/alarst13/u3d
+MIT License, Copyright (c) 2023 Al Arst.
+
+`adapters/u3d_adapter.py` imports and drives that implementation **without modifying it**.
+The code is not vendored in this repository; `scripts/setup_u3d.sh` fetches and builds it
+under `repos/u3d/`.
+
+
+Victim model
+------------
+MMAction2 C3D checkpoint (Sports-1M pretraining, fine-tuned on UCF-101 split-1).
+`common/dfbench/victim.py` is a standalone re-implementation that runs without mmcv; its
+logits were verified to match the original MMAction2 `Recognizer3D`.
+
+C3D architecture: Tran, Bourdev, Fergus, Torresani, Paluri.
+"Learning Spatiotemporal Features with 3D Convolutional Networks." ICCV, 2015.
+
+
+Figures
+-------
+`assets/figures/cdup_architecture.png` and `assets/figures/u3d_architecture.png` are
+architecture diagrams reproduced from the two papers above, included for explanation and
+attributed at every point of use (README and docs/). Copyright remains with the respective
+authors and publishers; they are not covered by this repository's license. Remove them if
+your redistribution terms require it.
+
+
+Dataset
+-------
+UCF-101. Soomro, Zamir, Shah.
+"UCF101: A Dataset of 101 Human Action Classes From Videos in The Wild."
+CRCV-TR-12-01, 2012.

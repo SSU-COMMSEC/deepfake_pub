@@ -1,0 +1,13 @@
+# Python 3.10. Pin the torch build to your GPU architecture.
+torch>=2.0
+numpy>=1.24
+opencv-python-headless>=4.8,<5
+decord>=0.6            # video decoding (scripts/demo.py falls back to OpenCV without it)
+tqdm
+scikit-learn           # U3D only -- repos/u3d imports it at module level
+
+# U3D only -- required to build the Rust extensions; see scripts/setup_u3d.sh
+# maturin>=1.0
+
+# Optional -- only when evaluating against a TensorRT engine (--engine)
+# tensorrt

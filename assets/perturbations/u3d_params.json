@@ -1,0 +1,44 @@
+{
+  "best_params": [
+    5,
+    180.0,
+    2.0,
+    180.0,
+    1.0
+  ],
+  "param_names": [
+    "num_octaves",
+    "wavelength_x",
+    "wavelength_y",
+    "wavelength_t",
+    "color_period"
+  ],
+  "pso": {
+    "swarmsize": 20,
+    "omega": 1.2,
+    "phip": 2.0,
+    "phig": 2.0,
+    "maxiter": 40,
+    "lb": [
+      1,
+      2.0,
+      2.0,
+      2.0,
+      1.0
+    ],
+    "ub": [
+      5,
+      180.0,
+      180.0,
+      180.0,
+      60.0
+    ]
+  },
+  "epsilon": 10.0,
+  "alpha": 0.5,
+  "iteration": 5,
+  "T": 16,
+  "n_opt_videos": 64,
+  "objective_evals": 36,
+  "optimise_seconds": 46.0
+}

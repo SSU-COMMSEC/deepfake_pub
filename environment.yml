@@ -1,0 +1,24 @@
+# conda env create -f environment.yml && conda activate uap-baselines
+#
+# PyTorch is installed separately so the CUDA build matches your driver -- see README.
+# Verified on Ubuntu 22.04 / RTX 5090 (sm_120) / CUDA 12.8 with:
+#   python 3.10.21 · torch 2.7.1+cu128 · numpy 2.2.6 · opencv 4.11.0 · decord 0.6.0
+#   rust 1.98.1 · maturin 1.15.0
+# PyTorch >= 2.7 is required on RTX 50-series; 2.6 and older have no sm_120 kernels.
+name: uap-baselines
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  - numpy>=1.24
+  - opencv>=4.8,<5       # video decoding fallback and the demo renderer
+  - tqdm
+  - scikit-learn        # U3D only -- the upstream dataloader imports it at module level
+  - libarchive           # provides bsdtar, used to extract UCF101.rar
+  - unzip
+  - curl
+  - openssl           # rebuilds the CRCV TLS chain in 00_prepare_dataset.sh
+  - pip:
+      - decord>=0.6      # fast video decoding (optional; the demo falls back to OpenCV)
+      - maturin>=1.0     # builds the U3D Rust extensions
