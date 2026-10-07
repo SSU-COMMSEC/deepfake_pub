@@ -41,6 +41,21 @@ C3D architecture: Tran, Bourdev, Fergus, Torresani, Paluri.
 "Learning Spatiotemporal Features with 3D Convolutional Networks." ICCV, 2015.
 
 
+PhantomSeal (deepfake target)
+-----------------------------
+Ren et al. "PhantomSeal: Proactive Deepfakes Defense with Identity/Context Protection and
+Forensic Tracing." ACM CCS, 2026.
+
+Implementation: https://github.com/LiangqinRen/PhantomSeal
+MIT License, Copyright (c) 2026 Liangqin Ren.
+
+`deepfake/` imports PhantomSeal's code (SimSwap target, identity/context extractors, protection
+objective, FaceNet-512 and dlib judges) without modifying it. PhantomSeal is not vendored in this
+repository; it is cloned to `repos/PhantomSeal` (or `PHANTOMSEAL_ROOT`), and its setup script
+downloads the third-party face-swapping projects, datasets and checkpoints, which remain under
+their own licenses and terms.
+
+
 Figures
 -------
 `assets/figures/cdup_architecture.png` and `assets/figures/u3d_architecture.png` are

@@ -37,7 +37,6 @@ Two configuration choices are recorded in reports/DEVIATIONS.md:
 import argparse, json, os, sys, time
 import numpy as np
 import torch
-import torch.nn as nn
 
 # 프로젝트 루트: DF_ROOT 우선 (Jetson 은 ~/bench 로 경로가 다르다)
 DF = os.environ.get("DF_ROOT",
@@ -48,8 +47,10 @@ from dfbench.runner import AttackRunner, DEFAULT_EPS                      # noqa
 from dfbench.paths import DATASET_DIR, RESULT_DIR                         # noqa: E402
 from dfbench.victim import C3DVictim                                      # noqa: E402
 from dfbench.records import atomic_write_json                             # noqa: E402
+from dfbench.cdup_core import (Generator3D, Z_SIZE, draw_perturbation,    # noqa: E402
+                               make_optimizer, roll)
 
-Z_SIZE, K_SIZE, P_MAX = 100, 3, 10          # para_model.py (P_MAX overridable via --eps)
+P_MAX = 10                                  # para_model.py (overridable via --eps)
 NUM_CLASSES = 101
 def ckpt_path(pmax, epochs=3):
     tag = "" if abs(pmax - 10) < 1e-6 else f"_p{pmax:g}"
@@ -60,39 +61,6 @@ def ckpt_path(pmax, epochs=3):
 def uap_path(pmax):
     tag = "" if abs(pmax - 10) < 1e-6 else f"_p{pmax:g}"
     return os.path.join(RESULT_DIR, "cdup", f"cdup_perturbation{tag}.npy")
-
-
-class Generator3D(nn.Module):
-    """PyTorch transcription of generator.py:generator_3D.
-
-    TF 'SAME' with kernel 3 / stride 2 doubles each spatial dim; in PyTorch that
-    is padding=1 with output_padding=1.  TF batch_norm(decay=0.1) corresponds to
-    PyTorch momentum=1-decay=0.9.
-    """
-    def __init__(self, z_size=Z_SIZE, k=K_SIZE):
-        super().__init__()
-        bn = lambda c: nn.BatchNorm3d(c, eps=1e-5, momentum=0.9, affine=True)
-        self.d1 = nn.ConvTranspose3d(z_size, 512, (1, 7, 7), stride=1, padding=0)
-        self.b1 = bn(512)
-        self.d2 = nn.ConvTranspose3d(512, 256, k, stride=2, padding=1, output_padding=1)
-        self.b2 = bn(256)
-        self.d3 = nn.ConvTranspose3d(256, 128, k, stride=2, padding=1, output_padding=1)
-        self.b3 = bn(128)
-        self.d4 = nn.ConvTranspose3d(128, 64, k, stride=2, padding=1, output_padding=1)
-        self.b4 = bn(64)
-        self.d5 = nn.ConvTranspose3d(64, 3, k, stride=2, padding=1, output_padding=1)
-        for m in self.modules():                       # random_normal_initializer(0.02)
-            if isinstance(m, nn.ConvTranspose3d):
-                nn.init.normal_(m.weight, 0.0, 0.02)
-                nn.init.zeros_(m.bias)
-
-    def forward(self, z):
-        x = z.view(z.shape[0], -1, 1, 1, 1)
-        x = torch.relu(self.b1(self.d1(x)))
-        x = torch.relu(self.b2(self.d2(x)))
-        x = torch.relu(self.b3(self.d3(x)))
-        x = torch.relu(self.b4(self.d4(x)))
-        return torch.tanh(self.d5(x))                  # (B,3,16,112,112) in [-1,1]
 
 
 def train_clips(n=None, seed=0):
@@ -114,9 +82,7 @@ def train_generator(a, victim):
         return g
 
     g = Generator3D().cuda().train()
-    opt = torch.optim.Adam(g.parameters(), lr=a.start_lr, betas=(0.3, 0.999))
-    sched = torch.optim.lr_scheduler.LambdaLR(
-        opt, lambda s: a.decay_rate ** (s // a.decay_steps))     # staircase decay
+    opt, sched = make_optimizer(g, a.start_lr, a.decay_steps, a.decay_rate)
 
     mm, idx, labels = train_clips(a.n_train, a.seed)
     rng = np.random.RandomState(a.seed)
@@ -135,7 +101,7 @@ def train_generator(a, victim):
             z = torch.randn(a.batch, Z_SIZE, device="cuda")
             p = a.eps * g(z)
             shift = int(rng.randint(0, 16))
-            p = torch.roll(p, shifts=shift, dims=2)          # tf.manip.roll(axis=1)
+            p = roll(p, shift)                               # tf.manip.roll(axis=1)
 
             logits = victim.model((torch.clamp(x + p, 0, 255) - victim._mean) / victim._std)
             sm = torch.softmax(logits, 1)
@@ -187,26 +153,10 @@ def main():
     victim = C3DVictim(max_batch=64)
     g = train_generator(a, victim)
 
-    # test.py: take perturbation index 0 of a generated batch, test_shift = 0
-    # z 는 전용 generator 로 뽑는다. 전역 CUDA RNG 를 쓰면 학습을 막 끝낸 실행과
-    # 체크포인트를 재사용한 실행의 RNG 상태가 달라져(학습 루프가 447 스텝만큼
-    # 소비) 같은 생성기에서 서로 다른 UAP 가 나오고, 평가는 건너뛰므로
-    # 디스크의 .npy 와 records.jsonl 이 다른 섭동을 가리키게 된다.
-    # ConvTranspose3d 의 기본 cuDNN 알고리즘은 비결정적이어서 실행마다 1e-6 수준의
-    # 차이가 난다. 추출은 순전파 1 회이므로 이 구간만 결정론 모드로 묶는다.
-    g.eval()
-    _prev_det, _prev_bench = (torch.backends.cudnn.deterministic,
-                              torch.backends.cudnn.benchmark)
-    torch.backends.cudnn.deterministic, torch.backends.cudnn.benchmark = True, False
-    try:
-        with torch.no_grad():
-            zgen = torch.Generator(device="cuda").manual_seed(a.seed)
-            z = torch.randn(a.batch, Z_SIZE, device="cuda", generator=zgen)
-            pert = (a.eps * g(z))[0]                           # (3,16,112,112)
-    finally:
-        torch.backends.cudnn.deterministic = _prev_det
-        torch.backends.cudnn.benchmark = _prev_bench
-    pert = pert.clamp(-a.eps, a.eps)
+    # test.py: take perturbation index 0 of a generated batch, test_shift = 0.
+    # draw_perturbation 은 전용 generator 와 cuDNN 결정론 구간으로 뽑으므로, 같은 생성기·시드면
+    # 학습 직후든 체크포인트 재사용이든 비트 단위로 같은 UAP 가 나온다 (dfbench/cdup_core.py).
+    pert = draw_perturbation(g, a.eps, seed=a.seed, batch=a.batch)   # (3,16,112,112)
     np.save(uap_path(a.eps), pert.cpu().numpy())
     print(f"[cdup] UAP: Linf={float(pert.abs().max()):.3f} "
           f"mean|.|={float(pert.abs().mean()):.3f}", flush=True)

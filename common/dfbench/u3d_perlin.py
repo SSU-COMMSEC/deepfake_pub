@@ -129,3 +129,62 @@ def generate_noise(T, frame_height, frame_width, num_octaves, wavelength_x,
         if mx > 1e-12:
             noise = noise * (epsilon / mx)
     return noise
+
+
+# ------------------------------------------------------------------ GPU (torch) 구현
+# 위 numpy 구현과 같은 값을 낸다 (selftest 에서 1e-12 이내로 대조). PSO 적합도 평가마다 노이즈를
+# 새로 합성해야 하는 딥페이크 파이프라인(deepfake/)이 쓴다.
+def _perlin_t(x, y, z, P, unipolar):
+    import torch
+    xi, yi, zi = (torch.floor(x).long() & 255), (torch.floor(y).long() & 255), (torch.floor(z).long() & 255)
+    xf, yf, zf = x - torch.floor(x), y - torch.floor(y), z - torch.floor(z)
+    u, v, w = _fade(xf), _fade(yf), _fade(zf)
+
+    def grad(h, a, b, c):
+        h = h & 15
+        p = torch.where(h < 8, a, b)
+        q = torch.where(h < 4, b, torch.where((h == 12) | (h == 14), a, c))
+        return torch.where((h & 1) == 0, p, -p) + torch.where((h & 2) == 0, q, -q)
+
+    aaa = P[P[P[xi] + yi] + zi]
+    aba = P[P[P[xi] + yi + 1] + zi]
+    aab = P[P[P[xi] + yi] + zi + 1]
+    abb = P[P[P[xi] + yi + 1] + zi + 1]
+    baa = P[P[P[xi + 1] + yi] + zi]
+    bba = P[P[P[xi + 1] + yi + 1] + zi]
+    bab = P[P[P[xi + 1] + yi] + zi + 1]
+    bbb = P[P[P[xi + 1] + yi + 1] + zi + 1]
+    x1 = _fade_lerp(grad(aaa, xf, yf, zf), grad(baa, xf - 1, yf, zf), u)
+    x2 = _fade_lerp(grad(aba, xf, yf - 1, zf), grad(bba, xf - 1, yf - 1, zf), u)
+    y1 = _fade_lerp(x1, x2, v)
+    x1 = _fade_lerp(grad(aab, xf, yf, zf - 1), grad(bab, xf - 1, yf, zf - 1), u)
+    x2 = _fade_lerp(grad(abb, xf, yf - 1, zf - 1), grad(bbb, xf - 1, yf - 1, zf - 1), u)
+    y2 = _fade_lerp(x1, x2, v)
+    out = _fade_lerp(y1, y2, w)
+    return (out + 1.0) / 2.0 if unipolar else out
+
+
+def generate_noise_torch(T, frame_height, frame_width, num_octaves, wavelength_x, wavelength_y,
+                         wavelength_t, color_period, epsilon, mode="paper", colormap="sin",
+                         device="cuda"):
+    """generate_noise 와 같은 규약의 (T,H,W) float64 torch 텐서. colormap 은 sin / square 만."""
+    import torch
+    paper = (mode == "paper")
+    P = torch.as_tensor(_P_PAPER if paper else _P_REPO, dtype=torch.long, device=device)
+    t, y, x = torch.meshgrid(torch.arange(T, dtype=torch.float64, device=device),
+                             torch.arange(frame_height, dtype=torch.float64, device=device),
+                             torch.arange(frame_width, dtype=torch.float64, device=device),
+                             indexing="ij")
+    n_terms = int(round(float(num_octaves))) + 1 if paper else int(round(float(num_octaves)))
+    out = torch.zeros_like(x)
+    for l in range(n_terms):
+        f = 2.0 ** l
+        out = out + _perlin_t(x * (f / wavelength_x), y * (f / wavelength_y),
+                              t * (f / wavelength_t), P, unipolar=not paper)
+    phi = color_period if paper else 1.0 / max(color_period, 1e-12)
+    a = torch.sin(out * 2.0 * np.pi * phi)
+    if colormap == "square":
+        a = torch.sign(a)
+    elif colormap != "sin":
+        raise ValueError(colormap)
+    return a * epsilon

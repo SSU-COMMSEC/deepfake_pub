@@ -126,6 +126,17 @@ def main():
     except Exception as e:
         row(WARN, "dfbench", f"could not import ({type(e).__name__}: {e})")
 
+    # Optional: the deepfake target (docs/DEEPFAKE.md). Never fails the check.
+    print("\n-- deepfake target (optional) " + "-" * 33)
+    ps_root = os.environ.get("PHANTOMSEAL_ROOT", os.path.join(ROOT, "repos", "PhantomSeal"))
+    have_ps = os.path.isdir(os.path.join(ps_root, "src"))
+    row(OK if have_ps else WARN, "PhantomSeal", ps_root if have_ps else
+        "not found  ->  docs/DEEPFAKE.md §4 (or set PHANTOMSEAL_ROOT)")
+    missing = [m for m in ("facenet_pytorch", "dlib", "insightface", "hydra", "onnxruntime")
+               if version_of(m) is None]
+    row(WARN if missing else OK, "face models",
+        f"{', '.join(missing)} missing  ->  use PhantomSeal's environment" if missing else "installed")
+
     print()
     if problems:
         print("Required items are missing. Run:\n")

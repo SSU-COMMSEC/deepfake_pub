@@ -9,6 +9,13 @@ one perturbation budget, one set of metrics.
 | **C-DUP** | NDSS 2019 | Dense tensor produced by a generator | Generator weights (gradient descent) | White-box | [docs/CDUP.md](docs/CDUP.md) |
 | **U3D** | IEEE S&P 2022 | Procedural Perlin noise | Five parameters (PSO) | Transfer-based black-box | [docs/U3D.md](docs/U3D.md) |
 
+Both methods run against two targets that share the same perturbation cores (`common/dfbench/`):
+
+| Target | Model under attack | Question | Code | Docs |
+|---|---|---|---|---|
+| **C3D** | C3D video classifier | does the perturbation make the video be misclassified? | `adapters/` | this README |
+| **Deepfake** | SimSwap face swapping, PhantomSeal's defence objective and judges | does a video protected before upload resist being turned into a deepfake? | `deepfake/` | [docs/DEEPFAKE.md](docs/DEEPFAKE.md) |
+
 ---
 
 ## Quick start
@@ -62,6 +69,7 @@ uap-baselines/
 ├── docs/
 │   ├── CDUP.md                   C-DUP: method, code map, deviations, usage
 │   ├── U3D.md                    U3D:   method, code map, findings, usage
+│   └── DEEPFAKE.md               deepfake target: integration, corrected U3D, installation, usage
 │
 ├── assets/
 │   ├── figures/                  architecture figures from the papers (authors' work, attributed)
@@ -72,15 +80,23 @@ uap-baselines/
 │       ├── SHA256SUMS
 │       └── README.md             provenance and shapes
 │
-├── adapters/                     end-to-end runner per method — generate -> save perturbation -> evaluate
-│   ├── cdup_adapter.py           trains the generator and extracts one perturbation; contains a
-│   │                             PyTorch transcription of the authors' generator_3D and objective
+├── adapters/                     C3D target: end-to-end runner per method — generate -> save -> evaluate
+│   ├── cdup_adapter.py           trains the generator (dfbench/cdup_core.py) against C3D and
+│   │                             extracts one perturbation
 │   └── u3d_adapter.py            searches the five parameters with PSO and synthesizes the noise;
 │                                 imports the reference implementation in repos/u3d/ unmodified
 │
+├── deepfake/                     deepfake target (SimSwap + PhantomSeal objective); see docs/DEEPFAKE.md
+│   ├── u3d_core.py, optimize.py  U3D (paper noise, converging PSO) and C-DUP driven by the protection score
+│   ├── inject.py, common.py      clip -> face-crop space -> frame -> attacker crop (differentiable)
+│   ├── model.py, judges.py       PhantomSeal's SimSwap target, objective, FaceNet-512 / dlib judges
+│   ├── phantomseal_frames.py     PhantomSeal on every frame (per-frame reference)
+│   └── scan_faces.py ... render_demo.py   stages 1-7, selftest.py
+│
 ├── common/
 │   ├── setup.py                  makes `dfbench` installable (`pip install -e common`)
-│   └── dfbench/                  shared evaluation harness — used identically by both methods
+│   └── dfbench/                  shared harness and perturbation cores — used by both methods and both targets
+│       ├── cdup_core.py          C-DUP generators (3D, 2D), Roll, Adam schedule, drawing one perturbation
 │       ├── paths.py              single source of every path; falls back to the repo root without DF_ROOT
 │       ├── data.py               decoding and preprocessing identical to the victim's training pipeline
 │       │                         (center 16 frames, resize, 112x112 crop, mean subtraction)
@@ -90,7 +106,7 @@ uap-baselines/
 │       │                         judge success -> one record per video -> skip finished videos
 │       ├── metrics.py            aggregates fooling rate, mean queries and mean absolute perturbation
 │       ├── records.py            crash-safe storage (immediate append + atomic writes)
-│       ├── u3d_perlin.py         vectorized implementation of paper Eq. 1-2; cross-checks the Rust extension
+│       ├── u3d_perlin.py         U3D noise, paper Eq. 1-2 and the Rust-compatible variant (numpy and GPU)
 │       └── trt_victim.py         TensorRT-engine victim model (optional)
 │
 └── scripts/
@@ -99,10 +115,11 @@ uap-baselines/
     ├── 00_prepare_dataset.sh     places and verifies UCF-101, the split lists and the C3D checkpoint
     ├── 01_clean_eval.py          measures clean accuracy and freezes the evaluation set
     ├── build_train_cache.py      decodes the training clips once into a memory map
-    └── setup_u3d.sh              clones alarst13/u3d and builds the Rust extensions
+    ├── setup_u3d.sh              clones alarst13/u3d and builds the Rust extensions
+    └── run_deepfake.sh           deepfake target, stages 0-7
 
                                   created during installation and not tracked:
-                                  dataset/  checkpoints/  repos/  results/  demo_out/
+                                  dataset/  checkpoints/  repos/  results/  demo_out/  cache/
 ```
 
 ## Development environment
@@ -138,6 +155,10 @@ pip install torch --index-url https://download.pytorch.org/whl/cu128   # CUDA 12
 
 pip install -r requirements.txt
 ```
+
+This environment covers the C3D target. The deepfake target runs in PhantomSeal's environment
+(PyTorch 2.8), which also runs the C3D target with identical results — one environment for both.
+See [docs/DEEPFAKE.md §4](docs/DEEPFAKE.md#4-installation).
 
 ### 1. Dataset and victim checkpoint
 | Asset | Download | Size |

@@ -5,6 +5,7 @@ results/
 repos/
 logs/
 demo_out/
+cache/
 
 __pycache__/
 *.py[cod]
